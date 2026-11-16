@@ -160,7 +160,9 @@ button:disabled { cursor: default; opacity: 0.6; }
 .prompt { margin: 0 0 12px; color: var(--muted); font-size: 0.95rem; }
 .question { font-size: 1.12rem; margin: 4px 0 16px; }
 .empty { color: var(--muted); }
-.hint { color: var(--muted); font-size: 0.85rem; text-align: center; margin: 4px 0 40px; }
+.hint { color: var(--muted); font-size: 0.85rem; text-align: center; margin: 4px 0; }
+#saveStatus { margin-bottom: 40px; }
+.hint.warn { color: var(--bad); }
 
 .code {
   background: var(--code-bg);

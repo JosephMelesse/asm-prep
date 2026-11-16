@@ -2,3 +2,5 @@ node_modules/
 *.exe
 *.obj
 .difftest/
+stats.json
+stats.json.tmp

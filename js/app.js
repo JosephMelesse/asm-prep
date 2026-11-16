@@ -8,38 +8,82 @@
 
   // ------------------------------------------------------------ storage
 
-  const store = {
-    get(key, fallback) {
+  // Saved to stats.json when served by server.js; otherwise browser storage.
+  const persist = {
+    remote: false,
+    async load() {
+      if (location.protocol.startsWith('http')) {
+        try {
+          const r = await fetch('api/stats', { cache: 'no-store' });
+          if (r.ok) {
+            this.remote = true;
+            return await r.json();
+          }
+        } catch (e) { /* not served by server.js */ }
+      }
       try {
-        const v = localStorage.getItem('x86prep.' + key);
-        return v === null ? fallback : JSON.parse(v);
+        return JSON.parse(localStorage.getItem('x86prep') || '{}');
       } catch (e) {
-        return fallback;
+        return {};
       }
     },
-    set(key, value) {
-      try {
-        localStorage.setItem('x86prep.' + key, JSON.stringify(value));
-      } catch (e) { /* private mode: keep going without persistence */ }
+    save(data) {
+      const body = JSON.stringify(data);
+      if (!this.remote) {
+        try {
+          localStorage.setItem('x86prep', body);
+        } catch (e) { /* storage blocked: keep going without it */ }
+        return;
+      }
+      fetch('api/stats', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
+        .then((r) => setStatus(r.ok ? 'saved' : 'failed'), () => setStatus('failed'));
     },
   };
 
   const state = {
-    mode: store.get('mode', 'trace'),
-    chapters: new Set(store.get('chapters', [4, 6, 7])),
-    disabled: new Set(store.get('disabled', [])),
-    stats: store.get('stats', {}),
+    mode: 'trace',
+    chapters: new Set([4, 6, 7]),
+    disabled: new Set(),
+    stats: {},
     session: { right: 0, total: 0 },
     queue: [],
     current: null,
   };
+
+  function save() {
+    persist.save({
+      mode: state.mode,
+      chapters: [...state.chapters],
+      disabled: [...state.disabled],
+      stats: state.stats,
+    });
+  }
+
+  function restore(saved) {
+    if (['trace', 'concept', 'mixed'].includes(saved.mode)) state.mode = saved.mode;
+    if (Array.isArray(saved.chapters)) state.chapters = new Set(saved.chapters);
+    if (Array.isArray(saved.disabled)) state.disabled = new Set(saved.disabled);
+    if (saved.stats && typeof saved.stats === 'object') state.stats = saved.stats;
+  }
+
+  const STATUS = {
+    saved: ['', 'Stats are saved to stats.json.'],
+    failed: ['warn', 'Could not save stats. Is node server.js still running?'],
+    local: ['warn', 'Stats are only kept in this browser. To save them to stats.json, run node server.js and open http://localhost:8231.'],
+  };
+
+  function setStatus(kind) {
+    const node = document.querySelector('#saveStatus');
+    node.className = 'hint ' + STATUS[kind][0];
+    node.textContent = STATUS[kind][1];
+  }
 
   function record(key, ok) {
     const s = state.stats[key] || { right: 0, total: 0 };
     s.total++;
     if (ok) s.right++;
     state.stats[key] = s;
-    store.set('stats', state.stats);
+    save();
     state.session.total++;
     if (ok) state.session.right++;
     $('#score').textContent = state.session.right + ' / ' + state.session.total;
@@ -488,7 +532,7 @@
       box.addEventListener('change', () => {
         if (box.checked) state.disabled.delete(t.id);
         else state.disabled.add(t.id);
-        store.set('disabled', [...state.disabled]);
+        save();
       });
       return el('tr', { class: state.chapters.has(t.ch) ? '' : 'off' },
         el('td', {}, el('label', { class: 'topic' }, box, ' ', t.name)),
@@ -505,7 +549,7 @@
     const reset = el('button', { type: 'button', class: 'ghost small' }, 'Reset stats');
     reset.addEventListener('click', () => {
       state.stats = {};
-      store.set('stats', {});
+      save();
       renderStats();
     });
     panel.append(
@@ -536,7 +580,7 @@
 
   document.querySelectorAll('#mode button').forEach((b) => b.addEventListener('click', () => {
     state.mode = b.dataset.mode;
-    store.set('mode', state.mode);
+    save();
     syncControls();
     next();
   }));
@@ -545,7 +589,7 @@
     const ch = Number(b.dataset.ch);
     if (state.chapters.has(ch)) state.chapters.delete(ch);
     else state.chapters.add(ch);
-    store.set('chapters', [...state.chapters]);
+    save();
     syncControls();
     if (!$('#stats').hidden) renderStats();
     next();
@@ -567,6 +611,10 @@
     else cur.check();
   });
 
-  syncControls();
-  next();
+  persist.load().then((saved) => {
+    restore(saved);
+    setStatus(persist.remote ? 'saved' : 'local');
+    syncControls();
+    next();
+  });
 })();
