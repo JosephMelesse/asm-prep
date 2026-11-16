@@ -1,0 +1,222 @@
+/*
+ * Fixed concept bank: multiple choice, true/false, and fill in the blank.
+ * mc:   choices[0] is the correct one (the UI shuffles them).
+ * tf:   answer is true or false.
+ * fill: answer is a list of accepted spellings (compared case-insensitively, spaces ignored).
+ * Text inside backticks renders as code.
+ */
+(function (root) {
+  'use strict';
+
+  const Q = [
+    // ---------------------------------------------------------------- 4.1
+    { sec: '4.1.2', type: 'fill', q: 'A constant operand such as `10h` is called a(n) ___ operand.', answer: ['immediate', 'imm'], why: 'The three operand types are immediate, register, and memory.' },
+    { sec: '4.1.3', type: 'tf', q: '`mov al,var1` and `mov al,[var1]` do the same thing.', answer: true, why: 'Brackets around a direct memory operand are optional in MASM.' },
+    { sec: '4.1.4', type: 'tf', q: 'MOV can copy a value directly from one memory variable to another.', answer: false, why: 'No x86 instruction takes two memory operands. Copy through a register.' },
+    { sec: '4.1.4', type: 'tf', q: 'Both MOV operands must be the same size.', answer: true, why: 'Only MOVZX and MOVSX widen a smaller source.' },
+    { sec: '4.1.4', type: 'mc', q: 'Which of these can never be the destination of MOV?', choices: ['EIP', 'EAX', 'a DWORD variable', 'BL'], why: 'The instruction pointer (and CS) cannot be a MOV destination.' },
+    { sec: '4.1.4', type: 'tf', q: '`mov ds,1000h` is a valid instruction.', answer: false, why: 'An immediate cannot be moved directly into a segment register.' },
+    { sec: '4.1.4', type: 'tf', q: 'MOV sets ZF when it copies the value 0.', answer: false, why: 'MOV never changes any flag.' },
+    { sec: '4.1.4', type: 'mc', q: 'Which MOV is invalid?', choices: ['`mov var2,var3`', '`mov ax,var2`', '`mov var2,ax`', '`mov var2,5`'], why: 'Memory to memory is not allowed.' },
+    { sec: '4.1.5', type: 'mc', q: 'MOVZX fills the upper bits of the destination with:', choices: ['zeros', 'copies of the source sign bit', 'ones', 'whatever was there before'], why: 'Zero extension.' },
+    { sec: '4.1.5', type: 'fill', q: 'MOVSX fills the upper bits of the destination with copies of the source\'s ___ bit.', answer: ['sign', 'msb', 'highest', 'most significant', 'mostsignificant', 'high', 'top'], why: 'Sign extension copies the MSB.' },
+    { sec: '4.1.5', type: 'mc', q: 'Which MOVZX is valid?', choices: ['`movzx eax,bx`', '`movzx ax,ebx`', '`movzx eax,5`', '`movzx var1,al`'], why: 'Destination must be a register larger than the source, and the source cannot be an immediate.' },
+    { sec: '4.1.5', type: 'tf', q: '`movzx ax,var2` is valid when var2 is a WORD.', answer: false, why: 'The source must be smaller than the destination.' },
+    { sec: '4.1.5', type: 'tf', q: 'The destination of MOVSX can be a memory operand.', answer: false, why: 'MOVZX and MOVSX need a register destination.' },
+    { sec: '4.1.6', type: 'mc', q: 'LAHF copies which flags into AH?', choices: ['SF, ZF, AF, PF, CF', 'CF, OF, SF, ZF', 'all of EFLAGS', 'OF, DF, IF, TF'], why: 'LAHF loads the low byte of EFLAGS. OF is not in it.' },
+    { sec: '4.1.6', type: 'fill', q: 'The instruction that copies AH into the low byte of EFLAGS is ___.', answer: ['sahf'], why: 'SAHF is the reverse of LAHF.' },
+    { sec: '4.1.6', type: 'tf', q: 'LAHF copies the Overflow flag into AH.', answer: false, why: 'OF is bit 11 of EFLAGS, outside the low byte.' },
+    { sec: '4.1.7', type: 'tf', q: 'XCHG can swap two memory operands directly.', answer: false, why: 'At least one operand must be a register.' },
+    { sec: '4.1.7', type: 'tf', q: 'XCHG accepts an immediate operand.', answer: false, why: 'Both operands are storage locations; an immediate cannot be written to.' },
+    { sec: '4.1.7', type: 'mc', q: 'To swap two memory variables you need:', choices: ['a register as temporary storage', 'a single XCHG', 'the PTR operator', 'MOVZX'], why: 'mov reg,var1 / xchg reg,var2 / mov var1,reg.' },
+    { sec: '4.1.8', type: 'mc', q: 'For `arrayW WORD 10,20,30`, the operand `arrayW+2` refers to:', choices: ['the second word (20)', 'the third word (30)', 'byte 2 of the first word', 'nothing, it is invalid'], why: 'Direct-offset values are in bytes. Each WORD is 2 bytes.' },
+    { sec: '4.1.8', type: 'tf', q: 'MASM checks that direct-offset operands stay inside the array.', answer: false, why: 'There is no bounds checking. `arrayB+20` assembles even past the end.' },
+    { sec: '4.1.8', type: 'fill', q: 'The second DWORD of `arrayD` is at `arrayD+___`.', answer: ['4'], why: 'A DWORD is 4 bytes.' },
+
+    // ---------------------------------------------------------------- 4.2
+    { sec: '4.2.1', type: 'tf', q: 'INC and DEC affect the Carry flag.', answer: false, why: 'INC and DEC change OF, SF, ZF, AF, PF, but never CF.' },
+    { sec: '4.2.1', type: 'mc', q: 'AL = FFh and CF = 0. After `inc al`:', choices: ['AL = 00h, ZF = 1, CF = 0', 'AL = 00h, ZF = 1, CF = 1', 'AL = 100h', 'AL = 00h, ZF = 0, CF = 1'], why: 'INC wraps to 0 and sets ZF, but leaves CF unchanged.' },
+    { sec: '4.2.4', type: 'fill', q: 'NEG replaces its operand with its two\'s ___.', answer: ['complement'], why: 'NEG computes 0 - operand.' },
+    { sec: '4.2.4', type: 'tf', q: 'NEG can set the Overflow flag.', answer: true, why: 'Negating the most negative value (80h, 8000h, 80000000h) overflows.' },
+    { sec: '4.2.4', type: 'mc', q: 'After NEG, CF = 0 only when:', choices: ['the operand was 0', 'the operand was negative', 'the operand was the most negative value', 'never; NEG always sets CF'], why: 'NEG is 0 - x, which borrows unless x is 0.' },
+    { sec: '4.2.6', type: 'mc', q: 'Which flag shows that an unsigned result was too large for the destination?', choices: ['CF', 'OF', 'SF', 'AF'], why: 'CF is unsigned overflow.' },
+    { sec: '4.2.6', type: 'mc', q: 'Which flag shows signed overflow?', choices: ['OF', 'CF', 'SF', 'PF'], why: 'OF is signed overflow.' },
+    { sec: '4.2.6', type: 'tf', q: 'Adding a positive integer to a negative integer can set the Overflow flag.', answer: false, why: 'The sum of two numbers with different signs always fits.' },
+    { sec: '4.2.6', type: 'tf', q: 'Adding two negative integers and getting a positive result sets OF.', answer: true, why: 'Same-sign operands with a different-sign result is signed overflow.' },
+    { sec: '4.2.6', type: 'mc', q: 'The CPU computes OF as:', choices: ['carry into the MSB XOR carry out of the MSB', 'CF AND SF', 'carry out of bit 3', 'SF XOR ZF'], why: 'Those two carries differ exactly when the signed result is out of range.' },
+    { sec: '4.2.6', type: 'mc', q: 'The Parity flag is set when:', choices: ['the low byte of the result has an even number of 1 bits', 'the low byte has an odd number of 1 bits', 'the result is even', 'all bits are 1'], why: 'PF looks only at the least significant byte.' },
+    { sec: '4.2.6', type: 'mc', q: 'The Auxiliary Carry flag reports a carry or borrow out of bit:', choices: ['3', '7', '15', '0'], why: 'AF is the carry from bit 3 into bit 4, used for BCD.' },
+    { sec: '4.2.6', type: 'fill', q: 'SUB sets CF when a larger ___ integer is subtracted from a smaller one.', answer: ['unsigned'], why: 'CF on subtraction means a borrow.' },
+    { sec: '4.2.6', type: 'tf', q: 'The CPU knows whether an integer operand is signed or unsigned.', answer: false, why: 'It sets CF and OF together; the programmer decides which to read.' },
+    { sec: '4.2.6', type: 'tf', q: 'The Sign flag is a copy of the most significant bit of the result.', answer: true, why: 'SF = MSB of the destination after the operation.' },
+    { sec: '4.2.6', type: 'mc', q: 'Which pair of instructions sets both ZF and CF?', choices: ['`mov al,0FFh` then `add al,1`', '`mov al,7Fh` then `add al,1`', '`mov al,1` then `sub al,1`', '`mov al,0` then `inc al`'], why: 'FFh + 1 wraps to 0 (ZF) with a carry out (CF).' },
+
+    // ---------------------------------------------------------------- 4.3
+    { sec: '4.3.1', type: 'mc', q: 'The OFFSET operator returns:', choices: ['the distance in bytes of a label from the start of its segment', 'the value stored in a variable', 'the size of a variable', 'the number of elements in an array'], why: 'In 32-bit mode that is a 32-bit address.' },
+    { sec: '4.3.2', type: 'mc', q: '`ALIGN 4` places the next variable at an address that is:', choices: ['a multiple of 4', '4 bytes after the previous variable', 'a multiple of 16', 'on a word boundary'], why: 'ALIGN pads so the address is divisible by the bound.' },
+    { sec: '4.3.2', type: 'tf', q: '`ALIGN 3` is a valid directive.', answer: false, why: 'The bound must be 1, 2, 4, 8, or 16.' },
+    { sec: '4.3.3', type: 'mc', q: 'The PTR operator is used to:', choices: ['override the declared size of an operand', 'get the address of a variable', 'declare a pointer variable', 'dereference ESI'], why: 'For example `mov ax,WORD PTR myDouble`.' },
+    { sec: '4.3.3', type: 'mc', q: '`wordVar WORD 1234h,5678h`. What does `mov eax,DWORD PTR wordVar` put in EAX?', choices: ['56781234h', '12345678h', '34127856h', 'It does not assemble'], why: 'Little-endian: the word at the lower address is the low half.' },
+    { sec: '4.3.3', type: 'mc', q: '`myDouble DWORD 12345678h`. What does `mov al,BYTE PTR myDouble` put in AL?', choices: ['78h', '12h', '34h', '56h'], why: 'The lowest byte is stored first.' },
+    { sec: '4.3.4', type: 'mc', q: '`TYPE` of a DWORD array returns:', choices: ['4', 'the number of elements', 'the total number of bytes', '32'], why: 'TYPE is the size of one element in bytes.' },
+    { sec: '4.3.5', type: 'mc', q: 'LENGTHOF counts:', choices: ['the elements in a declaration', 'the bytes in a declaration', 'the bits in one element', 'the characters before the null'], why: 'SIZEOF counts bytes.' },
+    { sec: '4.3.6', type: 'fill', q: 'SIZEOF equals LENGTHOF times ___.', answer: ['type'], why: 'Elements times bytes per element.' },
+    { sec: '4.3.5', type: 'mc', q: '`arr BYTE 5 DUP(3 DUP(?))`. LENGTHOF arr is:', choices: ['15', '5', '3', '8'], why: 'Nested DUPs multiply.' },
+    { sec: '4.3.5', type: 'tf', q: 'LENGTHOF counts values on the next line only if the current line ends with a comma.', answer: true, why: 'Without the comma, the next line is a separate declaration.' },
+    { sec: '4.3.6', type: 'mc', q: '`str1 BYTE "HELLO",0`. SIZEOF str1 is:', choices: ['6', '5', '1', '4'], why: 'Five characters plus the null byte.' },
+    { sec: '4.3.7', type: 'tf', q: 'The LABEL directive allocates storage.', answer: false, why: 'LABEL gives a new name and size to the next address without allocating anything.' },
+    { sec: '4.3.7', type: 'mc', q: 'LABEL is typically used to:', choices: ['give a variable an alternate name and size attribute', 'mark the target of a jump', 'align data', 'reserve uninitialized storage'], why: 'For example `val16 LABEL WORD` before `val32 DWORD 12345678h`.' },
+    { sec: '4.3.3', type: 'fill', q: 'Intel processors store multibyte values in ___-endian order.', answer: ['little'], why: 'Least significant byte at the lowest address.' },
+
+    // ---------------------------------------------------------------- 4.4
+    { sec: '4.4.1', type: 'tf', q: 'Any 32-bit general-purpose register can be used as an indirect operand.', answer: true, why: 'EAX, EBX, ECX, EDX, ESI, EDI, EBP, and ESP all work.' },
+    { sec: '4.4.1', type: 'mc', q: 'Why does `inc [esi]` fail to assemble?', choices: ['The operand size is unknown', 'ESI cannot be an indirect operand', 'INC cannot take a memory operand', 'OFFSET is missing'], why: 'Write `inc BYTE PTR [esi]` (or WORD/DWORD).' },
+    { sec: '4.4.2', type: 'mc', q: 'To step ESI to the next element of a DWORD array:', choices: ['`add esi,TYPE arr`', '`inc esi`', '`add esi,LENGTHOF arr`', '`add esi,SIZEOF arr`'], why: 'TYPE gives the element size, 4.' },
+    { sec: '4.4.3', type: 'mc', q: 'Valid scale factors in an indexed operand are:', choices: ['1, 2, 4, 8', '1, 2, 3, 4', '2, 4, 8, 16', 'any power of 2'], why: 'The hardware encodes only these four.' },
+    { sec: '4.4.3', type: 'tf', q: 'In `arrayW[esi]`, ESI is automatically treated as an element index.', answer: false, why: 'ESI is a byte offset unless you scale it: `arrayW[esi*TYPE arrayW]`.' },
+    { sec: '4.4.3', type: 'tf', q: '`arr[esi]` and `[arr+esi]` mean the same thing.', answer: true, why: 'They are two notations for the same indexed operand.' },
+    { sec: '4.4.4', type: 'fill', q: 'A variable that holds the address of another variable is a ___.', answer: ['pointer'], why: 'For example `ptrB DWORD arrayB`.' },
+    { sec: '4.4.4', type: 'fill', q: 'The ___ operator creates a user-defined type such as `PBYTE`.', answer: ['typedef'], why: '`PBYTE TYPEDEF PTR BYTE`.' },
+    { sec: '4.4.4', type: 'tf', q: '`ptrW DWORD arrayW` initializes ptrW with the address of arrayW.', answer: true, why: 'Same as `ptrW DWORD OFFSET arrayW`.' },
+
+    // ---------------------------------------------------------------- 4.5
+    { sec: '4.5.1', type: 'tf', q: 'JMP is a conditional transfer of control.', answer: false, why: 'JMP always jumps.' },
+    { sec: '4.5.2', type: 'mc', q: 'The LOOP instruction:', choices: ['decrements ECX, then jumps if ECX is not 0', 'tests ECX, then decrements it', 'decrements ECX, then jumps if ECX is 0', 'jumps, then decrements ECX'], why: 'Decrement first, then test.' },
+    { sec: '4.5.2', type: 'mc', q: 'If ECX = 0 when a LOOP body starts, the loop runs:', choices: ['4,294,967,296 times', '0 times', 'once', 'forever'], why: 'The first decrement wraps ECX to FFFFFFFFh.' },
+    { sec: '4.5.2', type: 'tf', q: 'LOOP changes the Zero flag.', answer: false, why: 'LOOP changes no flags.' },
+    { sec: '4.5.2', type: 'mc', q: 'The target of a LOOP instruction must be within:', choices: ['-128 to +127 bytes', 'anywhere in the segment', '-32,768 to +32,767 bytes', 'the same procedure, any distance'], why: 'LOOP uses an 8-bit relative offset.' },
+    { sec: '4.5.2', type: 'fill', q: 'In nested loops, save the outer count first because both loops use the ___ register.', answer: ['ecx', 'cx'], why: 'Save it in a variable or on the stack.' },
+    { sec: '4.5.5', type: 'tf', q: 'Copying a string with a count of `SIZEOF source` also copies its null terminator.', answer: true, why: 'SIZEOF includes every byte in the declaration.' },
+    { sec: '4.5.4', type: 'mc', q: 'In a loop that sums an array, ECX is usually initialized with:', choices: ['`LENGTHOF array`', '`SIZEOF array`', '`TYPE array`', '`OFFSET array`'], why: 'One iteration per element.' },
+
+    // ---------------------------------------------------------------- 6.1
+    { sec: '6.1.1', type: 'mc', q: 'Which flag is set when an operation produces a zero result?', choices: ['ZF', 'SF', 'CF', 'PF'], why: '' },
+    { sec: '6.1.2', type: 'mc', q: 'AND, OR, and XOR always clear:', choices: ['CF and OF', 'ZF and SF', 'CF only', 'nothing'], why: 'They set SF, ZF, PF from the result and clear CF and OF.' },
+    { sec: '6.1.2', type: 'mc', q: 'To clear specific bits, use:', choices: ['AND', 'OR', 'XOR', 'NOT'], why: 'Mask has 0 where bits are cleared.' },
+    { sec: '6.1.3', type: 'mc', q: 'To set specific bits, use:', choices: ['OR', 'AND', 'XOR', 'TEST'], why: 'Mask has 1 where bits are set.' },
+    { sec: '6.1.5', type: 'mc', q: 'To toggle (invert) specific bits, use:', choices: ['XOR', 'OR', 'AND', 'NEG'], why: 'Mask has 1 where bits flip.' },
+    { sec: '6.1.6', type: 'tf', q: 'NOT affects the flags.', answer: false, why: 'NOT changes no flags. NEG does.' },
+    { sec: '6.1.6', type: 'mc', q: 'NOT performs:', choices: ['a one\'s complement', 'a two\'s complement', 'a logical negation of ZF', 'subtraction from zero'], why: 'It inverts every bit. NEG is two\'s complement.' },
+    { sec: '6.1.7', type: 'tf', q: 'TEST changes its destination operand.', answer: false, why: 'TEST is an AND that only sets flags.' },
+    { sec: '6.1.7', type: 'mc', q: 'Which instruction is a nondestructive AND?', choices: ['TEST', 'CMP', 'AND', 'BT'], why: '' },
+    { sec: '6.1.7', type: 'mc', q: 'After `test al,00000001b`, ZF = 1 means:', choices: ['AL is even', 'AL is odd', 'AL is zero', 'AL is negative'], why: 'Bit 0 is clear.' },
+    { sec: '6.1.2', type: 'mc', q: 'Which converts a lowercase ASCII letter in AL to uppercase?', choices: ['`and al,11011111b`', '`or al,00100000b`', '`xor al,0FFh`', '`not al`'], why: 'Clearing bit 5 (20h) makes it uppercase.' },
+    { sec: '6.1.3', type: 'fill', q: 'To convert a binary digit 0 to 9 to ASCII, OR it with ___h.', answer: ['30', '30h', '00110000b'], why: '\'0\' is 30h.' },
+    { sec: '6.1.2', type: 'mc', q: 'Which single instruction converts an ASCII digit in AL to binary and leaves a binary value 00h to 09h unchanged?', choices: ['`and al,0Fh`', '`sub al,30h`', '`or al,30h`', '`xor al,30h`'], why: 'Clearing the high nibble removes the 3 from 3xh and does nothing to 0xh.' },
+    { sec: '6.1.5', type: 'fill', q: 'XOR of any value with itself gives ___.', answer: ['0', 'zero', '0h'], why: 'That is why `xor eax,eax` clears a register.' },
+    { sec: '6.1.5', type: 'tf', q: 'XORing a value twice with the same key gives back the original value.', answer: true, why: '(x XOR k) XOR k = x.' },
+    { sec: '6.1.5', type: 'tf', q: 'PF reflects the parity of the whole 32-bit result.', answer: false, why: 'Only the low byte.' },
+    { sec: '6.1.5', type: 'mc', q: 'How do you check the parity of a 16-bit value with PF?', choices: ['XOR its two bytes together and read PF', 'TEST the whole word', 'shift right by 8', 'it cannot be done'], why: 'PF only sees 8 bits, so combine the bytes first.' },
+    { sec: '6.1.4', type: 'mc', q: 'In bit-mapped sets, union is computed with:', choices: ['OR', 'AND', 'XOR', 'NOT'], why: '' },
+    { sec: '6.1.4', type: 'mc', q: 'In bit-mapped sets, intersection is computed with:', choices: ['AND', 'OR', 'XOR', 'NOT'], why: '' },
+    { sec: '6.1.4', type: 'mc', q: 'In bit-mapped sets, the complement of a set is computed with:', choices: ['NOT', 'NEG', 'XOR with 0', 'AND with 0'], why: '' },
+    { sec: '6.1.4', type: 'mc', q: 'The members of SetX that are not in SetY are:', choices: ['SetX AND (NOT SetY)', 'SetX OR (NOT SetY)', 'SetX XOR SetY', 'NOT (SetX AND SetY)'], why: 'Set difference.' },
+    { sec: '6.1.8', type: 'mc', q: 'CMP performs an implied:', choices: ['subtraction', 'AND', 'addition', 'XOR'], why: 'It sets flags as SUB would, then discards the result.' },
+    { sec: '6.1.8', type: 'mc', q: 'After `cmp eax,ebx` where EAX < EBX as unsigned values:', choices: ['CF = 1, ZF = 0', 'CF = 0, ZF = 0', 'CF = 0, ZF = 1', 'CF = 1, ZF = 1'], why: 'Subtracting a larger unsigned value borrows.' },
+    { sec: '6.1.8', type: 'mc', q: 'After a signed CMP where destination > source:', choices: ['SF = OF and ZF = 0', 'SF ≠ OF', 'ZF = 1', 'CF = 1'], why: '' },
+    { sec: '6.1.8', type: 'mc', q: 'After a signed CMP where destination < source:', choices: ['SF ≠ OF', 'SF = OF', 'ZF = 1', 'CF = 0'], why: '' },
+    { sec: '6.1.9', type: 'mc', q: 'Which instruction sets ZF?', choices: ['`test al,0`', '`or al,1`', '`stc`', '`and al,0FFh` when AL ≠ 0'], why: 'ANDing with 0 always gives 0.' },
+    { sec: '6.1.9', type: 'mc', q: 'Which instruction clears the Sign flag?', choices: ['`and al,7Fh`', '`or al,80h`', '`stc`', '`neg al`'], why: 'Clearing the high bit makes the result non-negative.' },
+    { sec: '6.1.9', type: 'mc', q: 'Which pair sets the Overflow flag?', choices: ['`mov al,7Fh` then `inc al`', '`mov al,0FFh` then `inc al`', '`or eax,0`', '`stc`'], why: '7Fh + 1 crosses from the largest positive to negative.' },
+    { sec: '6.1.9', type: 'fill', q: 'The instruction that complements the Carry flag is ___.', answer: ['cmc'], why: 'STC sets, CLC clears, CMC flips.' },
+    { sec: '6.1.9', type: 'mc', q: '`or al,al` is commonly used to:', choices: ['set ZF and SF from AL without changing it', 'clear AL', 'set AL to FFh', 'copy AL into AH'], why: '' },
+
+    // ---------------------------------------------------------------- 6.2
+    { sec: '6.2.3', type: 'mc', q: 'JA, JB, JAE, and JBE are meant for comparing:', choices: ['unsigned integers', 'signed integers', 'only ECX', 'flags directly'], why: 'Above/Below are unsigned. Greater/Less are signed.' },
+    { sec: '6.2.3', type: 'mc', q: 'JG, JL, JGE, and JLE are meant for comparing:', choices: ['signed integers', 'unsigned integers', 'ASCII characters only', 'only ECX'], why: '' },
+    { sec: '6.2.3', type: 'mc', q: 'JA jumps when:', choices: ['CF = 0 and ZF = 0', 'CF = 1', 'ZF = 1', 'SF = OF'], why: 'Above means no borrow and not equal.' },
+    { sec: '6.2.3', type: 'mc', q: 'JBE jumps when:', choices: ['CF = 1 or ZF = 1', 'CF = 0 and ZF = 0', 'SF ≠ OF', 'ZF = 0'], why: '' },
+    { sec: '6.2.3', type: 'mc', q: 'JL jumps when:', choices: ['SF ≠ OF', 'CF = 1', 'SF = OF', 'ZF = 1'], why: '' },
+    { sec: '6.2.3', type: 'mc', q: 'JG jumps when:', choices: ['ZF = 0 and SF = OF', 'CF = 0 and ZF = 0', 'SF ≠ OF', 'SF = 1'], why: '' },
+    { sec: '6.2.3', type: 'mc', q: 'Which conditional jump depends on ECX instead of the flags?', choices: ['JECXZ', 'JCXE', 'LOOPZ', 'JZ'], why: 'JECXZ jumps when ECX = 0.' },
+    { sec: '6.2.3', type: 'tf', q: 'JNBE is the same instruction as JA.', answer: true, why: 'Not below or equal = above.' },
+    { sec: '6.2.3', type: 'tf', q: 'JE and JZ are the same instruction.', answer: true, why: 'Both test ZF = 1.' },
+    { sec: '6.2.3', type: 'tf', q: 'JC and JB are the same instruction.', answer: true, why: 'Both test CF = 1.' },
+    { sec: '6.2.3', type: 'fill', q: 'JNAE is another name for ___.', answer: ['jb', 'jc'], why: 'Not above or equal = below.' },
+    { sec: '6.2.3', type: 'fill', q: 'JNG is another name for ___.', answer: ['jle'], why: 'Not greater = less or equal.' },
+    { sec: '6.2.3', type: 'mc', q: 'The opposite of JGE is:', choices: ['JL', 'JLE', 'JG', 'JB'], why: '' },
+    { sec: '6.2.3', type: 'mc', q: 'The opposite of JA is:', choices: ['JBE', 'JB', 'JAE', 'JLE'], why: '' },
+    { sec: '6.2.3', type: 'tf', q: 'After `mov eax,-1` and `cmp eax,1`, JA jumps.', answer: true, why: 'As unsigned, FFFFFFFFh is above 1.' },
+    { sec: '6.2.3', type: 'tf', q: 'After `mov eax,-1` and `cmp eax,1`, JG jumps.', answer: false, why: 'As signed, -1 is less than 1.' },
+    { sec: '6.2.2', type: 'tf', q: 'In 32-bit protected mode a conditional jump can reach any address in the current code segment.', answer: true, why: 'Only the 8086 limited Jcc to -128 to +127 bytes.' },
+    { sec: '6.2.2', type: 'tf', q: 'A conditional jump changes the flags.', answer: false, why: 'Jcc only reads flags.' },
+
+    // ---------------------------------------------------------------- 6.4
+    { sec: '6.4.1', type: 'mc', q: 'To implement `if (a == b)`, after `cmp a,b` you normally:', choices: ['jump on the opposite condition (JNE) past the THEN block', 'use JE to skip the THEN block', 'use JMP', 'use LOOP'], why: 'Fall through into THEN when the condition holds.' },
+    { sec: '6.4.2', type: 'tf', q: 'Short-circuit evaluation of an AND stops as soon as one condition is false.', answer: true, why: 'The whole AND is already false.' },
+    { sec: '6.4.2', type: 'tf', q: 'Short-circuit evaluation of an OR stops as soon as one condition is true.', answer: true, why: 'The whole OR is already true.' },
+    { sec: '6.4.2', type: 'mc', q: 'In a short-circuit OR, when the first condition is true the code:', choices: ['jumps straight into the THEN block', 'tests the second condition anyway', 'jumps to ELSE', 'falls through to ENDIF'], why: '' },
+    { sec: '6.4.3', type: 'mc', q: 'A WHILE loop tests its condition:', choices: ['at the top, before each iteration', 'only at the bottom', 'once', 'never'], why: '' },
+    { sec: '6.4.3', type: 'tf', q: 'A WHILE loop body always runs at least once.', answer: false, why: 'The test comes first, so it can run zero times.' },
+    { sec: '6.4.3', type: 'mc', q: 'A WHILE loop in assembly ends with:', choices: ['a JMP back to the top test', 'a conditional jump to the body', 'LOOP', 'RET'], why: 'The top test jumps out when the condition fails.' },
+    { sec: '6.4.4', type: 'mc', q: 'Table-driven selection replaces a chain of compares with:', choices: ['a table of lookup values and procedure addresses', 'nested loops', 'a LOOPZ', 'a macro'], why: '' },
+    { sec: '6.4.4', type: 'fill', q: 'In table-driven selection, the matching procedure is invoked with the ___ instruction.', answer: ['call'], why: 'For example `call NEAR PTR [ebx+1]`.' },
+
+    // ---------------------------------------------------------------- 7.1
+    { sec: '7.1.2', type: 'mc', q: 'SHL fills the vacated low bit with:', choices: ['0', 'the old CF', 'the old MSB', '1'], why: 'The bit shifted out of the top goes to CF.' },
+    { sec: '7.1.4', type: 'mc', q: 'SAR fills the vacated high bits with:', choices: ['copies of the sign bit', '0', 'CF', 'the LSB'], why: 'That keeps the sign, so SAR divides signed numbers.' },
+    { sec: '7.1.3', type: 'mc', q: 'SHR by n bits is a fast way to:', choices: ['divide an unsigned number by 2^n', 'divide a signed number by 2^n', 'multiply by 2^n', 'rotate by n'], why: '' },
+    { sec: '7.1.4', type: 'tf', q: 'SAL and SHL are the same instruction.', answer: true, why: 'They have the same encoding.' },
+    { sec: '7.1.1', type: 'mc', q: 'After a shift, CF holds:', choices: ['the last bit shifted out', 'the first bit shifted out', '0', 'the MSB of the result'], why: '' },
+    { sec: '7.1.5', type: 'mc', q: 'ROL differs from SHL because:', choices: ['the bit shifted out the top comes back in at the bottom', 'it leaves CF alone', 'it shifts right', 'it fills with ones'], why: 'Rotates lose no bits.' },
+    { sec: '7.1.7', type: 'mc', q: 'RCL and RCR rotate through:', choices: ['the Carry flag', 'the Overflow flag', 'the Sign flag', 'AH'], why: 'CF acts as an extra bit.' },
+    { sec: '7.1.5', type: 'mc', q: '`rol al,4` does what to AL?', choices: ['swaps its two nibbles', 'clears it', 'multiplies it by 16', 'reverses its bits'], why: '' },
+    { sec: '7.1.5', type: 'tf', q: 'Rotate instructions change ZF.', answer: false, why: 'Rotates change only CF and OF.' },
+    { sec: '7.1.8', type: 'mc', q: 'After a shift or rotate, OF is defined only when the count is:', choices: ['1', '0', 'a multiple of 8', 'in CL'], why: 'For other counts OF is undefined.' },
+    { sec: '7.1.8', type: 'mc', q: 'For a 1-bit shift or rotate, OF = 1 when:', choices: ['the sign bit changes', 'CF = 1', 'the result is 0', 'the count is in CL'], why: '' },
+    { sec: '7.1.9', type: 'mc', q: '`shld dest,src,count` fills the vacated low bits of dest with:', choices: ['the high bits of src', 'the low bits of src', 'zeros', 'CF'], why: 'SHRD uses the low bits of src for the vacated high bits.' },
+    { sec: '7.1.9', type: 'tf', q: 'SHRD changes its source operand.', answer: false, why: 'Only the destination changes.' },
+    { sec: '7.1.9', type: 'tf', q: 'SHLD can operate on 8-bit operands.', answer: false, why: 'SHLD and SHRD need 16- or 32-bit operands.' },
+    { sec: '7.1.1', type: 'mc', q: 'A shift count can be an immediate or:', choices: ['CL', 'CX', 'ECX', 'any 8-bit register'], why: '' },
+    { sec: '7.1.1', type: 'tf', q: 'x86 processors mask the shift count to 5 bits.', answer: true, why: 'Counts are taken mod 32.' },
+    { sec: '7.1.2', type: 'mc', q: 'Shifting an unsigned value left by n bits:', choices: ['multiplies it by 2^n', 'divides it by 2^n', 'adds n', 'squares it'], why: '' },
+    { sec: '7.1.4', type: 'mc', q: '`sar` on a negative odd number rounds the quotient:', choices: ['toward negative infinity', 'toward zero', 'up', 'to the nearest integer'], why: 'For example -5 SAR 1 = -3. IDIV would give -2.' },
+    { sec: '7.1.2', type: 'mc', q: 'Which single instruction multiplies EAX by 16?', choices: ['`shl eax,4`', '`shl eax,16`', '`shr eax,4`', '`rol eax,16`'], why: '16 = 2^4.' },
+    { sec: '7.1.3', type: 'mc', q: 'Which single instruction divides an unsigned EBX by 4?', choices: ['`shr ebx,2`', '`sar ebx,4`', '`shr ebx,4`', '`shl ebx,2`'], why: '4 = 2^2.' },
+
+    // ---------------------------------------------------------------- 7.2
+    { sec: '7.2.1', type: 'mc', q: 'To shift a multi-doubleword integer right by 1 bit, start with:', choices: ['SHR on the most significant doubleword, then RCR on the rest', 'SHL on the least significant doubleword', 'RCL on every doubleword', 'ROR on every doubleword'], why: 'CF carries the bit down to the next doubleword.' },
+    { sec: '7.2.2', type: 'mc', q: 'Which computes x * 36 with shifts?', choices: ['(x SHL 5) + (x SHL 2)', 'x SHL 36', '(x SHL 6) - (x SHL 2)', '(x SHL 5) + (x SHL 1)'], why: '36 = 32 + 4.' },
+    { sec: '7.2.3', type: 'mc', q: 'A loop that prints EAX in binary does `shl eax,1` and then checks:', choices: ['CF', 'ZF', 'SF', 'OF'], why: 'The bit shifted out lands in CF.' },
+
+    // ---------------------------------------------------------------- 7.3
+    { sec: '7.3.1', type: 'mc', q: '`mul bl` multiplies BL by:', choices: ['AL, with the product in AX', 'AX, with the product in DX:AX', 'EAX, with the product in EDX:EAX', 'AL, with the product in AL'], why: '' },
+    { sec: '7.3.1', type: 'mc', q: '`mul ecx` stores the product in:', choices: ['EDX:EAX', 'EAX', 'ECX:EAX', 'EAX:EDX'], why: '' },
+    { sec: '7.3.1', type: 'tf', q: 'MUL accepts an immediate operand.', answer: false, why: 'The operand must be a register or memory.' },
+    { sec: '7.3.1', type: 'mc', q: 'MUL sets CF and OF when:', choices: ['the upper half of the product is not zero', 'the product is negative', 'the product is zero', 'the operands have different signs'], why: '' },
+    { sec: '7.3.2', type: 'mc', q: 'One-operand IMUL sets CF and OF when:', choices: ['the upper half is not a sign extension of the lower half', 'the upper half is not zero', 'the product is negative', 'never'], why: '' },
+    { sec: '7.3.2', type: 'tf', q: 'Two-operand IMUL can lose significant bits of the product.', answer: true, why: 'The product is truncated to the destination size; CF and OF report it.' },
+    { sec: '7.3.2', type: 'tf', q: 'Three-operand IMUL takes an immediate as its third operand.', answer: true, why: 'For example `imul ebx,ecx,-5`.' },
+    { sec: '7.3.1', type: 'mc', q: 'After MUL, which flags are undefined?', choices: ['SF, ZF, AF, PF', 'CF and OF', 'all flags', 'none'], why: 'MUL defines only CF and OF.' },
+    { sec: '7.3.3', type: 'fill', q: 'The Irvine32 procedure that returns the milliseconds elapsed since midnight is ___.', answer: ['getmseconds'], why: 'Call it before and after, then subtract.' },
+    { sec: '7.3.4', type: 'mc', q: 'After `div bl`, the quotient is in:', choices: ['AL, with the remainder in AH', 'AH, with the remainder in AL', 'AX, with the remainder in DX', 'BL'], why: '' },
+    { sec: '7.3.4', type: 'mc', q: '`div bx` divides:', choices: ['DX:AX', 'AX', 'EAX', 'BX:AX'], why: '' },
+    { sec: '7.3.4', type: 'tf', q: 'Before an unsigned 32-bit DIV, EDX should hold the upper half of the dividend (usually 0).', answer: true, why: 'DIV divides all of EDX:EAX.' },
+    { sec: '7.3.4', type: 'tf', q: 'DIV leaves the flags in a defined state.', answer: false, why: 'All arithmetic flags are undefined after DIV and IDIV.' },
+    { sec: '7.3.4', type: 'mc', q: 'A divide overflow happens when:', choices: ['the quotient is too large for its destination', 'the remainder is 0', 'the dividend is negative', 'the divisor is odd'], why: 'Dividing by zero also raises the divide error.' },
+    { sec: '7.3.4', type: 'tf', q: 'An 8-bit DIV divides AX, so AH must be set before the DIV.', answer: true, why: 'Zero it for unsigned, or use CBW for IDIV.' },
+    { sec: '7.3.5', type: 'mc', q: 'Before IDIV with a 32-bit divisor, use:', choices: ['CDQ', 'CBW', 'CWD', '`mov edx,0`'], why: 'CDQ sign-extends EAX into EDX.' },
+    { sec: '7.3.5', type: 'mc', q: 'CBW extends:', choices: ['AL into AX', 'AX into DX:AX', 'EAX into EDX:EAX', 'AH into AX'], why: '' },
+    { sec: '7.3.5', type: 'mc', q: 'CWD extends:', choices: ['AX into DX:AX', 'AL into AX', 'EAX into EDX:EAX', 'AX into EAX'], why: '' },
+    { sec: '7.3.5', type: 'mc', q: 'The remainder from IDIV has the same sign as:', choices: ['the dividend', 'the divisor', 'the quotient', 'nothing; it is always positive'], why: '' },
+    { sec: '7.3.5', type: 'tf', q: 'IDIV truncates the quotient toward zero.', answer: true, why: '-7 / 2 gives -3, remainder -1.' },
+    { sec: '7.3.5', type: 'tf', q: 'CBW, CWD, and CDQ change the flags.', answer: false, why: 'They only copy the sign bit.' },
+    { sec: '7.3.6', type: 'mc', q: 'When evaluating an expression with MUL, which register must be saved first if it holds a needed value?', choices: ['EDX', 'ESI', 'EBX', 'ECX'], why: 'MUL writes the upper half of the product into EDX.' },
+    { sec: '7.3.6', type: 'tf', q: 'For unsigned expressions use MUL and DIV; for signed use IMUL and IDIV.', answer: true, why: '' },
+
+    // ---------------------------------------------------------------- 7.4
+    { sec: '7.4.1', type: 'mc', q: 'ADC adds:', choices: ['the source plus CF to the destination', 'only the source', 'only CF', 'the source minus CF'], why: '' },
+    { sec: '7.4.3', type: 'mc', q: 'SBB computes:', choices: ['destination - source - CF', 'destination - source + CF', 'source - destination - CF', 'destination - CF'], why: '' },
+    { sec: '7.4.2', type: 'tf', q: 'Extended addition starts with the most significant part.', answer: false, why: 'Start at the least significant part so carries flow upward.' },
+    { sec: '7.4.2', type: 'mc', q: 'Which instruction can safely update a loop index between ADC steps without disturbing CF?', choices: ['INC', 'ADD', 'SUB', 'CMP'], why: 'INC and DEC leave CF alone.' },
+    { sec: '7.4.2', type: 'fill', q: 'Before a loop of ADC instructions, clear the Carry flag with ___.', answer: ['clc'], why: '' },
+    { sec: '7.4.2', type: 'mc', q: 'After adding the highest parts with ADC, the final carry out is captured with:', choices: ['`adc` into an extra part with 0', '`mov` from CF', '`sbb`', '`lahf`'], why: 'For example `adc DWORD PTR [ebx],0`.' },
+  ];
+
+  const CH = (sec) => Number(sec.split('.')[0]);
+  const BANK = Q.map((q, i) => ({ ...q, id: 'c' + i, ch: CH(q.sec) }));
+
+  const api = { BANK };
+  root.Concepts = api;
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(typeof window !== 'undefined' ? window : globalThis);

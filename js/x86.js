@@ -805,7 +805,7 @@
 
     snapshot() {
       const mem = {};
-      for (const name of this.written) {
+      for (const name of Object.keys(this.vars)) {
         const v = this.vars[name];
         const elems = [];
         for (let i = 0; i < v.length; i++) elems.push(this.readMem(v.addr + BigInt(i * v.type), v.type));

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>x86 Midterm Prep</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>x86 Midterm Prep</h1>
+      <span class="sub">Ch 4, 6, 7 &middot; 32-bit Irvine32</span>
+    </div>
+    <div class="score" id="score" title="Questions answered fully correct this session">0 / 0</div>
+  </header>
+
+  <nav class="controls">
+    <div class="seg" id="mode">
+      <button type="button" data-mode="trace">Trace</button>
+      <button type="button" data-mode="concept">Concepts</button>
+      <button type="button" data-mode="mixed">Mixed</button>
+    </div>
+    <div class="seg" id="chapters">
+      <button type="button" data-ch="4">Ch 4</button>
+      <button type="button" data-ch="6">Ch 6</button>
+      <button type="button" data-ch="7">Ch 7</button>
+    </div>
+    <button type="button" class="ghost" id="statsBtn">Topics &amp; stats</button>
+  </nav>
+
+  <main>
+    <section class="panel" id="stats" hidden></section>
+    <section class="card" id="card"></section>
+    <p class="hint">Enter checks your answer. Enter again goes to the next question.</p>
+  </main>
+
+  <script src="js/x86.js"></script>
+  <script src="js/generators.js"></script>
+  <script src="js/concepts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
